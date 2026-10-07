@@ -1,3 +1,8 @@
 ./build/
 .qtcreator
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+rpi-fastcast
 

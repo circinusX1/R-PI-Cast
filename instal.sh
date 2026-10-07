@@ -6,6 +6,17 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+
+# installing needs
+echo "Installing needed packages: cmake ffmpeg mpv alsa mesa libdrm fbi fbset. Y/Ctrl+C"
+read yn
+sudo apt update
+sudo apt install -y mpv build-essential cmake ffmpeg alsa-utils mesa-va-drivers libdrm2 fbi fbset 
+
+rm -rf rpi-fastcast
+cmake .
+make
+
 # Check if required files exist in the current directory
 if [ ! -f "./rpi-fastcast.service" ]; then
   echo "Error: 'rpi-fastcast.service' not found in the current folder." >&2
@@ -36,9 +47,6 @@ if [ -z "$PASSWORD" ]; then
   exit 1
 fi
 
-# installing needs
-sudo apt update
-sudo apt install -y mpv ffmpeg alsa-utils mesa-va-drivers libdrm2 fbi fbset
 
 
 # Define paths
