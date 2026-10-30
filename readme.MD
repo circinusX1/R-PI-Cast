@@ -31,7 +31,7 @@ You can select AUDIO from the App settings to be over HDMI or over speakers.
 This is the web versin of the APK simplified.
 
 You can run it locally if you have apache2 or lighttpd with PHP
-emabled, otherwise the simplerway is with just php:
+emabled, otherwise the simpler way is with just php:
 
 ```
 php -S localhost:8000 # in the folder where index.php is located.
@@ -39,6 +39,7 @@ php -S localhost:8000 # in the folder where index.php is located.
 
 If you deploy it on a R-PI or an a board with HDMI and a good video card,
 then you can access it by IP. Audio HDMI/Speakers play frmo the left top buttons.
+Then you play it by pressing HDMI button over the HDMI.
 
 ![1000](docs/rpi-cast.png)
 
