@@ -9,7 +9,7 @@ It uses the Chrome Cast API to tell it from whet link to stream.
 For R-PI is the same, detects the R-PI on your netowrk, then sends the link to R-PI
 and tell to R-PI to play the stream. When installing the R-PI youre asked for a password.
 On the APK settings you have to provide same password. That is the ecnryption key
-on which the APK encrupts the data that sends it to R-PI just for the sake of it.
+on which the APK encrypts the data sent to R-PI, just for the sake of it.
 
 
 -- -- 
