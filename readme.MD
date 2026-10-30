@@ -16,7 +16,7 @@ runs this service.
 ./install.sh
 
 ```
-Then on the https://github.com/circinusX1/fast-iptv  on the Android phone on the App
+Then on the fast-tv app  on the Android phone on the App
 goto settings and discover the RPI. Then save settings.
 Now you can cast TV statoins which the ChromeCast cannot decode to R-PI.
 You can select AUDIO from the App settings to be over HDMI or over speakers.
