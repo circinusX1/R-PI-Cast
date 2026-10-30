@@ -1,5 +1,5 @@
 
-# APK to: play TV local, on Crome cast and on R-PI
+# APK to: play TV local, on Chrome cast and on R-PI
 [Buy me a coffee](https://www.paypal.com/ncp/payment/UY6RJK9AQ6HVC)
 -- --
 Transforms the R-PI to a 'chrome cast'. 
