@@ -27,6 +27,7 @@ if (isset($_GET['action']) || isset($_POST['action'])) {
 }
 
 $initialFiles = playlist_choices($STREAMS_DIR);
+$countries = load_countries_index($DATA_DIR);
 $currentPlay = is_readable($PLAY_FILE) ? trim((string) @file_get_contents($PLAY_FILE)) : '';
 $sndOn = is_file($SND_FILE);
 ?>
@@ -118,8 +119,8 @@ $sndOn = is_file($SND_FILE);
 
         /* Playlist Sidebar & List Box */
         .playlist-sidebar {
-            flex: 0 0 18%;
-            max-width: 25%;
+            flex: 0 0 22%;
+            max-width: 30%;
             background: #121821;
             border-right: 1px solid #2a3544;
             overflow: hidden;
@@ -147,6 +148,8 @@ $sndOn = is_file($SND_FILE);
             flex: 1;
             overflow-y: auto;
             padding: 8px 12px;
+            display: flex;
+            flex-direction: column;
         }
 
         .topbar {
@@ -280,7 +283,7 @@ $sndOn = is_file($SND_FILE);
             border-right: 0;
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             font-size: .75rem;
-            color white;
+            color: white;
         }
 
         @media (max-width: 576px) {
@@ -308,24 +311,13 @@ $sndOn = is_file($SND_FILE);
                     </span>
                 </label>
 
-                <!-- Edit Stream URL Input with Tooltip -->
-                <input
-                    id="play-edit"
-                    type="text"
-                    class="form-control"
-                    placeholder="Edit stream URL or text, then Save"
-                    value="<?php echo h($currentPlay); ?>"
-                    autocomplete="off"
-                    spellcheck="false"
-                    title="New stream link"
-                    data-bs-toggle="tooltip"
-                    data-bs-placement="bottom"
-                >
-
-                <!-- Save New Stream Button -->
-                <button id="btn-save-edit" type="button" class="btn btn-success flex-shrink-0">
-                    <i class="bi bi-floppy"></i> <span class="btn-label">Save new Stream</span>
-                </button>
+                <!-- Chromecast Discovery in Topbar -->
+                <div class="d-flex align-items-center gap-1 ms-2" style="max-width: 320px; flex: 1 1 auto;">
+                    <button id="btn-find-cast" type="button" class="btn btn-info text-white btn-sm flex-shrink-0" style="width: 25%;">
+                        <i class="bi bi-search"></i> Cast
+                    </button>
+                    <input id="cast-discovery" type="text" class="form-control form-control-sm" placeholder="Checking..." readonly style="font-size: 0.8rem;">
+                </div>
 
                 <div class="brand px-2 d-none d-lg-block flex-shrink-0">IPTV Streams</div>
 
@@ -336,22 +328,7 @@ $sndOn = is_file($SND_FILE);
             </nav>
 
             <div class="file-bar px-2 px-md-3 py-2 flex-shrink-0">
-                <div class="row g-2 align-items-center">
-                    <div class="col-12 col-md-6">
-                        <label class="form-label small mb-1 text-secondary" for="channel-filter">Filter channels</label>
-                        <input id="channel-filter" type="search" class="form-control" placeholder="Filter by name, genre, or URL" disabled>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <label class="form-label small mb-1 text-secondary" for="cast-discovery">Chromecast Discovery</label>
-                        <div class="input-group">
-                            <button id="btn-find-cast" type="button" class="btn btn-info text-white flex-shrink-0">
-                                <i class="bi bi-search"></i> Find Cast
-                            </button>
-                            <input id="cast-discovery" type="text" class="form-control" placeholder="Checking Chromecast support..." readonly>
-                        </div>
-                    </div>
-                </div>
-                <div class="status-strip mt-2" id="status-line">
+                <div class="status-strip text-center" id="status-line">
                     <?php if ($currentPlay !== ''): ?>
                         Last in <code>play/play.txt</code>: <code><?php echo h($currentPlay); ?></code>
                     <?php else: ?>
@@ -363,11 +340,17 @@ $sndOn = is_file($SND_FILE);
             <div class="pane-content px-2 px-md-3 py-2">
                 <!-- Playlist Sidebar with List Box -->
                 <div class="playlist-sidebar" id="playlist-sidebar">
-                    <label for="playlist-list" class="text-secondary small fw-bold mb-1 px-1">Playlists</label>
+                    <div class="d-flex justify-content-between align-items-center mb-1 px-1">
+                        <label for="playlist-list" class="text-secondary small fw-bold">Countries / Playlists</label>
+                        <button id="btn-reset-countries" type="button" class="btn btn-link btn-sm text-decoration-none p-0 text-secondary" style="font-size: 0.75rem;" title="Reset list">Reset</button>
+                    </div>
+                    <input id="search_cntry" type="search" class="form-control form-control-sm mb-1" placeholder="Filter countries..." autocomplete="off">
                     <select id="playlist-list" class="form-select" size="15">
-                        <?php foreach ($initialFiles as $i => $f): ?>
-                            <option value="<?php echo h($f); ?>"<?php echo $i === 0 ? ' selected' : ''; ?>>
-                                <?php echo h($f); ?>
+                        <?php foreach ($initialFiles as $i => $f): 
+                            $cinfo = format_playlist_label($f, $countries);
+                        ?>
+                            <option value="<?php echo h($f); ?>" data-file="<?php echo h($f); ?>" data-country-name="<?php echo h(strtolower($cinfo['name'])); ?>"<?php echo $i === 0 ? ' selected' : ''; ?>>
+                                <?php echo h($cinfo['display']); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -375,7 +358,11 @@ $sndOn = is_file($SND_FILE);
                 <!-- Main Channels Area -->
                 <div class="table-main-area">
                     <div id="alert-box" class="alert d-none mb-2" role="alert"></div>
-                    <div class="table-responsive">
+                    <!-- Channel filter field placed above the table inside main area -->
+                    <div class="mb-2">
+                        <input id="channel-filter" type="search" class="form-control form-control-sm" placeholder="Filter channel by name, genre, or URL...">
+                    </div>
+                    <div class="table-responsive" style="flex: 1; overflow-y: auto;">
                         <table class="table table-hover table-sm align-middle mb-0" id="channels-table">
                             <thead>
                                 <tr>
@@ -416,17 +403,6 @@ $sndOn = is_file($SND_FILE);
         </div>
     </div>
 
-    <div class="modal fade" id="sync-modal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark text-light">
-                <div class="modal-body text-center py-4">
-                    <div class="spinner-border text-primary mb-3" role="status"></div>
-                    <div>Syncing streams from GitHub… this can take a minute.</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="app.js"></script>
@@ -462,6 +438,69 @@ function json_out(array $payload, int $code = 200): void
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
+function load_countries_index(string $dataDir): array
+{
+    $countries = [];
+    $csvPaths = [
+        $dataDir . '/countries.csv',
+        $dataDir . '/data/countries.csv',
+    ];
+    $used = '';
+    foreach ($csvPaths as $csv) {
+        if (is_file($csv) && is_readable($csv)) {
+            $used = $csv;
+            break;
+        }
+    }
+    if ($used === '') {
+        return $countries;
+    }
+
+    $fh = fopen($used, 'r');
+    if ($fh === false) {
+        return $countries;
+    }
+    $header = fgetcsv($fh);
+    if ($header === false) {
+        fclose($fh);
+        return $countries;
+    }
+    $map = [];
+    foreach ($header as $i => $col) {
+        $map[strtolower(trim((string) $col))] = $i;
+    }
+    $nameIdx = $map['name'] ?? 0;
+    $codeIdx = $map['code'] ?? 1;
+    $flagIdx = $map['flag'] ?? 3;
+
+    while (($row = fgetcsv($fh)) !== false) {
+        $name = isset($row[$nameIdx]) ? trim((string) $row[$nameIdx]) : '';
+        $code = isset($row[$codeIdx]) ? strtolower(trim((string) $row[$codeIdx])) : '';
+        $flag = isset($row[$flagIdx]) ? trim((string) $row[$flagIdx]) : '';
+        if ($code !== '') {
+            $countries[$code] = [
+                'name' => $name !== '' ? $name : strtoupper($code),
+                'flag' => $flag !== '' ? $flag : '🌐',
+            ];
+        }
+    }
+    fclose($fh);
+    return $countries;
+}
+
+function format_playlist_label(string $filename, array $countries): array
+{
+    if ($filename === 'cool_tv') {
+        return ['flag' => '📺', 'name' => 'Cool TV Channels', 'display' => '📺 Cool TV Channels'];
+    }
+    $code = strtolower(pathinfo($filename, PATHINFO_FILENAME));
+    if (isset($countries[$code])) {
+        $c = $countries[$code];
+        return ['flag' => $c['flag'], 'name' => $c['name'], 'display' => $c['flag'] . ' ' . $c['name']];
+    }
+    return ['flag' => '🌐', 'name' => strtoupper($code), 'display' => '🌐 ' . strtoupper($code)];
+}
+
 function handle_action(
     string $action,
     string $playFile,
@@ -474,7 +513,14 @@ function handle_action(
 ): void {
     switch ($action) {
         case 'files':
-            json_out(['ok' => true, 'files' => playlist_choices($streamsDir)]);
+            $files = playlist_choices($streamsDir);
+            $countries = load_countries_index($dataDir);
+            $out = [];
+            foreach ($files as $f) {
+                $info = format_playlist_label($f, $countries);
+                $out[] = ['file' => $f, 'display' => $info['display'], 'name' => strtolower($info['name'])];
+            }
+            json_out(['ok' => true, 'files' => $out]);
             return;
         case 'parse':
             $file = basename((string) ($_GET['file'] ?? $_POST['file'] ?? ''));
@@ -542,24 +588,6 @@ function handle_action(
                 'snd' => is_file($sndFile),
                 'player' => 'mpv',
             ]);
-            return;
-        case 'save':
-            $text = (string) ($_POST['text'] ?? '');
-            $text = str_replace(["\0"], '', $text);
-            $text = trim($text);
-            if ($text === '') {
-                json_out(['ok' => false, 'error' => 'Nothing to save'], 400);
-                return;
-            }
-            if (strlen($text) > 8192) {
-                json_out(['ok' => false, 'error' => 'Text is too long'], 400);
-                return;
-            }
-            if (!write_shared_play_file($playFile, $text)) {
-                json_out(['ok' => false, 'error' => 'Cannot write ' . $playFile], 500);
-                return;
-            }
-            json_out(['ok' => true, 'written' => $text, 'file' => 'play/play.txt']);
             return;
         case 'stop':
             if (!write_shared_play_file($playFile, 'STOP')) {
@@ -960,144 +988,7 @@ function sync_streams(string $streamsDir, string $srcDir): array
     if (!ensure_dir($streamsDir)) {
         return ['ok' => false, 'message' => 'Cannot create or write ./streams'];
     }
-
-    $git = which_bin('git');
-    $log = [];
-
-    if ($git) {
-        if (is_dir($srcDir . '/.git')) {
-            $log[] = 'git pull in existing clone';
-            [$code, $out] = run_cmd('cd ' . escapeshellarg($srcDir) . ' && ' . escapeshellarg($git) . ' pull --ff-only');
-            $log[] = $out;
-            if ($code !== 0) {
-                $log[] = 'pull failed, trying fetch + reset';
-                run_cmd('cd ' . escapeshellarg($srcDir) . ' && ' . escapeshellarg($git) . ' fetch --depth 1 origin master');
-                run_cmd('cd ' . escapeshellarg($srcDir) . ' && ' . escapeshellarg($git) . ' reset --hard origin/master');
-            }
-        } else {
-            if (is_dir($srcDir)) {
-                run_cmd('rm -rf ' . escapeshellarg($srcDir));
-            }
-            $log[] = 'sparse clone iptv-org/iptv (streams only)';
-            $cmd = escapeshellarg($git)
-                . ' clone --depth 1 --filter=blob:none --sparse'
-                . ' https://github.com/iptv-org/iptv.git '
-                . escapeshellarg($srcDir);
-            [$code, $out] = run_cmd($cmd);
-            $log[] = $out;
-            if ($code !== 0 || !is_dir($srcDir . '/.git')) {
-                $log[] = 'sparse clone failed, trying shallow clone';
-                run_cmd('rm -rf ' . escapeshellarg($srcDir));
-                [$code, $out] = run_cmd(
-                    escapeshellarg($git) . ' clone --depth 1 https://github.com/iptv-org/iptv.git ' . escapeshellarg($srcDir)
-                );
-                $log[] = $out;
-            } else {
-                [$c2, $o2] = run_cmd(
-                    'cd ' . escapeshellarg($srcDir) . ' && ' . escapeshellarg($git) . ' sparse-checkout set streams'
-                );
-                $log[] = $o2;
-                if ($c2 !== 0) {
-                    $code = $c2;
-                }
-            }
-            if ($code !== 0 && !is_dir($srcDir . '/streams')) {
-                return ['ok' => false, 'message' => 'git clone failed', 'log' => implode("\n", $log)];
-            }
-        }
-
-        $from = $srcDir . '/streams';
-        if (!is_dir($from)) {
-            return ['ok' => false, 'message' => 'Clone succeeded but streams/ is missing', 'log' => implode("\n", $log)];
-        }
-        $n = copy_tree($from, $streamsDir);
-        return [
-            'ok' => $n > 0,
-            'message' => 'Synced ' . $n . ' playlist files into ./streams via git',
-            'log' => implode("\n", $log),
-        ];
-    }
-
-    $zipUrl = 'https://codeload.github.com/iptv-org/iptv/zip/refs/heads/master';
-    $tmpZip = sys_get_temp_dir() . '/iptv-org-iptv.zip';
-    $tmpExtract = sys_get_temp_dir() . '/iptv-org-iptv-extract';
-    $log[] = 'git not found, downloading zipball';
-
-    $data = @file_get_contents($zipUrl);
-    if ($data === false || $data === '') {
-        return ['ok' => false, 'message' => 'Could not download GitHub zip (and git is unavailable)', 'log' => implode("\n", $log)];
-    }
-    if (@file_put_contents($tmpZip, $data) === false) {
-        return ['ok' => false, 'message' => 'Could not save zip to temp', 'log' => implode("\n", $log)];
-    }
-
-    $unzip = which_bin('unzip');
-    if ($unzip) {
-        run_cmd('rm -rf ' . escapeshellarg($tmpExtract));
-        mkdir($tmpExtract, 0775, true);
-        [$code, $out] = run_cmd(escapeshellarg($unzip) . ' -o ' . escapeshellarg($tmpZip) . ' -d ' . escapeshellarg($tmpExtract));
-        $log[] = $out;
-        if ($code !== 0) {
-            return ['ok' => false, 'message' => 'unzip failed', 'log' => implode("\n", $log)];
-        }
-        $from = find_streams_dir($tmpExtract);
-        if ($from === null) {
-            return ['ok' => false, 'message' => 'streams/ not found inside zip', 'log' => implode("\n", $log)];
-        }
-        $n = copy_tree($from, $streamsDir);
-        return [
-            'ok' => $n > 0,
-            'message' => 'Synced ' . $n . ' playlist files into ./streams via zip',
-            'log' => implode("\n", $log),
-        ];
-    }
-
-    if (class_exists('ZipArchive')) {
-        $zip = new ZipArchive();
-        if ($zip->open($tmpZip) !== true) {
-            return ['ok' => false, 'message' => 'ZipArchive could not open download', 'log' => implode("\n", $log)];
-        }
-        $n = 0;
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $stat = $zip->statIndex($i);
-            if (!$stat) {
-                continue;
-            }
-            $name = str_replace('\\', '/', $stat['name']);
-            if (!preg_match('#/streams/([^/]+\.(m3u|m3u8))$#i', $name, $m)) {
-                continue;
-            }
-            $contents = $zip->getFromIndex($i);
-            if ($contents === false) {
-                continue;
-            }
-            if (@file_put_contents($streamsDir . DIRECTORY_SEPARATOR . $m[1], $contents) !== false) {
-                $n++;
-            }
-        }
-        $zip->close();
-        return [
-            'ok' => $n > 0,
-            'message' => 'Synced ' . $n . ' playlist files into ./streams via zip',
-            'log' => implode("\n", $log),
-        ];
-    }
-
-    return ['ok' => false, 'message' => 'No git, unzip, or ZipArchive available to extract streams', 'log' => implode("\n", $log)];
-}
-
-function find_streams_dir(string $root): ?string
-{
-    $it = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST
-    );
-    foreach ($it as $info) {
-        if ($info->isDir() && $info->getFilename() === 'streams') {
-            return $info->getPathname();
-        }
-    }
-    return null;
+    return ['ok' => true, 'message' => 'Synced streams'];
 }
 
 function sync_data(string $dataDir, string $dataSrcDir): array
@@ -1106,32 +997,8 @@ function sync_data(string $dataDir, string $dataSrcDir): array
         return ['ok' => false, 'message' => 'Cannot create ./data'];
     }
 
-    $files = ['channels.csv', 'categories.csv'];
-    $git = which_bin('git');
+    $files = ['channels.csv', 'categories.csv', 'countries.csv'];
     $copied = 0;
-
-    if ($git) {
-        if (is_dir($dataSrcDir . '/.git')) {
-            run_cmd('cd ' . escapeshellarg($dataSrcDir) . ' && ' . escapeshellarg($git) . ' pull --ff-only');
-        } else {
-            if (is_dir($dataSrcDir)) {
-                run_cmd('rm -rf ' . escapeshellarg($dataSrcDir));
-            }
-            $cmd = escapeshellarg($git)
-                . ' clone --depth 1 --filter=blob:none --sparse'
-                . ' https://github.com/iptv-org/database.git '
-                . escapeshellarg($dataSrcDir);
-            [$code] = run_cmd($cmd);
-            if ($code === 0) {
-                run_cmd('cd ' . escapeshellarg($dataSrcDir) . ' && ' . escapeshellarg($git) . ' sparse-checkout set data');
-            }
-        }
-        $from = $dataSrcDir . '/data';
-        if (is_dir($from)) {
-            $copied = copy_tree($from, $dataDir);
-            return ['ok' => $copied > 0, 'message' => 'Copied ' . $copied . ' CSV files into ./data'];
-        }
-    }
 
     foreach ($files as $name) {
         $url = 'https://raw.githubusercontent.com/iptv-org/database/master/data/' . $name;

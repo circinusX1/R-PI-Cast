@@ -8,12 +8,23 @@ let hdmiPlayingUrl = '';
 let castPlayingUrl = '';
 let hlsInstance = null;
 let castReady = false;
+let fullPlaylistOptions = [];
 
 $(document).ready(function() {
     // Enable tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Cache original playlist options for reset / filtering
+    $('#playlist-list option').each(function() {
+        fullPlaylistOptions.push({
+            value: $(this).val(),
+            text: $(this).text(),
+            countryName: ($(this).data('country-name') || '').toString().toLowerCase(),
+            file: $(this).data('file') || $(this).val()
+        });
     });
 
     // Handle splitter resizing
@@ -73,8 +84,28 @@ function setupEvents() {
         }
     });
 
-    // Channel Filter Input
-    $('#channel-filter').on('input', function() {
+    // Reset Countries List Button
+    $('#btn-reset-countries').on('click', function() {
+        $('#search_cntry').val('');
+        populatePlaylistSidebar(fullPlaylistOptions, true);
+        showAlert('Country list reset.', 'info');
+    });
+
+    // Substring filter in search_cntry (live filter of playlist-list)
+    $(document).on('input', '#search_cntry', function() {
+        const query = $(this).val().toLowerCase().trim();
+        if (!query) {
+            populatePlaylistSidebar(fullPlaylistOptions, false);
+            return;
+        }
+        const filteredOptions = fullPlaylistOptions.filter(opt => {
+            return opt.countryName.includes(query) || opt.text.toLowerCase().includes(query);
+        });
+        populatePlaylistSidebar(filteredOptions, false);
+    });
+
+    // Channel Filter Input (local live filtering of loaded channels)
+    $(document).on('input', '#channel-filter', function() {
         const query = $(this).val().toLowerCase();
         renderChannels(allChannels, query);
     });
@@ -96,24 +127,10 @@ function setupEvents() {
         });
     });
 
-    // Save Edit URL Button
-    $('#btn-save-edit').on('click', function() {
-        const text = $('#play-edit').val();
-        $.post('', { action: 'save', text: text }, function(res) {
-            if (res.ok) {
-                showAlert('Saved to play.txt successfully!', 'success');
-                pollStatus();
-            } else {
-                showAlert(res.error || 'Failed to save', 'danger');
-            }
-        }).fail(function() {
-            showAlert('Network error saving text', 'danger');
-        });
-    });
-
     // SND Toggle Change
     $('#chk-snd').on('change', function() {
-        const on = $(this).is(':checked') ? '1' : '0';$.post('', { action: 'snd', on: on }, function(res) {
+        const on = $(this).is(':checked') ? '1' : '0';
+        $.post('', { action: 'snd', on: on }, function(res) {
             if (!res.ok) {
                 showAlert('Failed to update SND toggle', 'danger');
             }
@@ -128,8 +145,7 @@ function setupEvents() {
         playStream(url, name);
     });
 
-    // HDMI toggle: blue = off, green = this stream is on the Pi HDMI via mpv.
-    // Audio follows the SND switch (play/snd.txt).
+    // HDMI toggle
     $(document).on('click', '.btn-hdmi', function() {
         const btn = $(this);
         const url = btn.data('url');
@@ -168,7 +184,7 @@ function setupEvents() {
         });
     });
 
-    // CAST toggle: blue = not casting this stream, green = this stream is on Chromecast.
+    // CAST toggle
     $(document).on('click', '.btn-cast', function() {
         const url = $(this).data('url');
         const name = $(this).data('name') || 'stream';
@@ -180,16 +196,37 @@ function setupEvents() {
     });
 }
 
+function populatePlaylistSidebar(options, autoLoadFirst = false) {
+    const select = $('#playlist-list');
+    select.empty();
+    if (options.length === 0) {
+        select.append('<option value="" disabled>No countries found</option>');
+        clearChannelsTable('No playlist selected.');
+        return;
+    }
+    options.forEach((opt, idx) => {
+        const selectedAttr = (idx === 0) ? ' selected' : '';
+        select.append(`<option value="${escapeHtml(opt.value)}" data-file="${escapeHtml(opt.file)}" data-country-name="${escapeHtml(opt.countryName)}"${selectedAttr}>${escapeHtml(opt.text)}</option>` );
+    });
+    if (autoLoadFirst && options.length > 0) {
+        loadChannels(options[0].value);
+    }
+}
+
+function clearChannelsTable(msg) {
+    $('#channels-body').html(`<tr><td colspan="3" class="text-secondary py-4 text-center">${escapeHtml(msg)}</td></tr>`);
+    allChannels = [];
+}
+
 function loadChannels(fileName) {
     $('#channels-body').html('<tr><td colspan="3" class="text-secondary py-4 text-center"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Loading channels...</td></tr>');
-    $('#channel-filter').prop('disabled', true);
+    $('#channel-filter').val('');
 
     $.get('', { action: 'parse', file: fileName }, function(res) {
         if (res.ok) {
             allChannels = res.channels || [];
             renderChannels(allChannels, '');
-            $('#channel-filter').prop('disabled', false).val('');
-            showAlert(`Loaded ${allChannels.length} channels from ${res.file}.`, 'success');
+            showAlert(`Loaded ${allChannels.length} channels.`, 'success');
         } else {
             $('#channels-body').html(`<tr><td colspan="3" class="text-danger py-4 text-center">${res.error || 'Failed to parse file'}</td></tr>`);
             showAlert(res.error || 'Failed to parse file', 'danger');
@@ -222,28 +259,59 @@ function renderChannels(channels, filterQuery) {
         const genre = escapeHtml(ch.genre || ch.group || 'General');
         const url = escapeHtml(ch.url || '');
         const isPlaying = url === currentPlayingUrl;
+        const playlistBadge = ch.playlist_display ? `<span class="badge bg-secondary me-1" title="Country">${escapeHtml(ch.playlist_display)}</span>` : '';
+
+        // Check if the stream URL extension is html or ends with html
+        const isHtmlStream = /\.html?($|\?)/i.test(url);
+
+        let streamColumnContent = '';
+        if (isHtmlStream) {
+            // Disable play button or omit it, and transform stream-url into an anchor link with target="_blank"
+            streamColumnContent = `
+                <div class="d-flex align-items-center gap-2">
+                    <a href="${url}" target="_blank" rel="noopener noreferrer" class="stream-url small font-monospace text-decoration-underline" title="${url}">${url}</a>
+                    <button type="button" class="btn btn-sm btn-secondary btn-play" disabled title="HTML stream cannot be played locally">
+                        <i class="bi bi-play-fill"></i> Play
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary btn-hdmi" disabled title="Not available for HTML">
+                        HDMI
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary btn-cast" disabled title="Not available for HTML">
+                        CAST
+                    </button>
+                </div>
+            `;
+        } else {
+            // Standard media stream rendering
+            streamColumnContent = `
+                <div class="d-flex align-items-center gap-2">
+                    <span class="stream-url small font-monospace" title="${url}">${url}</span>
+                    <button type="button" class="btn btn-sm btn-primary btn-play" data-url="${url}" data-name="${name}">
+                        <i class="bi bi-play-fill"></i> Play
+                    </button>
+                    <button type="button" class="btn btn-sm ${hdmiPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-hdmi" data-url="${url}" data-name="${name}" title="Toggle HDMI mpv.">
+                        HDMI
+                    </button>
+                    <button type="button" class="btn btn-sm ${castPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-cast" data-url="${url}" data-name="${name}" title="Toggle Chromecast">
+                        CAST
+                    </button>
+                </div>
+            `;
+        }
 
         return `
             <tr class="${isPlaying ? 'playing' : ''}">
                 <td>
-                    <div class="fw-semibold text-truncate" style="max-width: 250px;" title="${name}">${name}</div>
+                    <div class="d-flex align-items-center">
+                        ${playlistBadge}
+                        <div class="fw-semibold text-truncate" style="max-width: 230px;" title="${name}">${name}</div>
+                    </div>
                 </td>
                 <td>
                     <span class="badge genre-badge">${genre}</span>
                 </td>
                 <td>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="stream-url small font-monospace" title="${url}">${url}</span>
-                        <button type="button" class="btn btn-sm btn-primary btn-play" data-url="${url}" data-name="${name}">
-                            <i class="bi bi-play-fill"></i> Play
-                        </button>
-                        <button type="button" class="btn btn-sm ${hdmiPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-hdmi" data-url="${url}" data-name="${name}" title="Toggle HDMI mpv. Audio follows SND.">
-                            HDMI
-                        </button>
-                        <button type="button" class="btn btn-sm ${castPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-cast" data-url="${url}" data-name="${name}" title="Toggle Chromecast on this network">
-                            CAST
-                        </button>
-                    </div>
+                    ${streamColumnContent}
                 </td>
             </tr>
         `;
@@ -252,20 +320,19 @@ function renderChannels(channels, filterQuery) {
     tbody.html(htmlRows.join(''));
 }
 
+
 function playStream(url, name) {
     currentPlayingUrl = url;
     showSystemCommand(url);
     $('#player-title').html(`<i class="bi bi-tv me-1"></i> ${name}`);
     $('#player-status').text('Connecting...').removeClass('bg-secondary bg-success bg-danger').addClass('bg-warning text-dark');
 
-    // Post to play.txt backend
     $.post('', { action: 'play', url: url }, function(res) {
         if (res.ok) {
             pollStatus();
         }
     });
 
-    // Start local embedded video playback
     const video = document.getElementById('video-player');
 
     if (hlsInstance) {
@@ -300,7 +367,6 @@ function playStream(url, name) {
         $('#player-status').text('Playing').removeClass('bg-warning bg-secondary bg-danger').addClass('bg-success');
     }
 
-    // Refresh table to update highlight state
     renderChannels(allChannels, $('#channel-filter').val().toLowerCase());
 }
 
@@ -312,8 +378,6 @@ function shellQuote(value) {
     return "'" + String(value).replace(/'/g, "'\\''") + "'";
 }
 
-// Same argv dropmvp.sh execs after writing play/play.txt.
-// SND on -> headphones, SND off -> HDMI audio. Picture is always HDMI.
 function systemCommand(url) {
     const sndOn = $('#chk-snd').is(':checked');
     const adev = sndOn ? 'alsa/plughw:Headphones,0' : 'alsa/plughw:vc4hdmi0,0';
@@ -380,13 +444,13 @@ function initCast() {
             autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
         });
         castReady = true;
-        $('#cast-discovery').val('Ready — click CAST to pick a Chromecast');
+        $('#cast-discovery').val('Ready — click Cast');
         ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, function(ev) {
             const state = ev.sessionState;
             if (state === cast.framework.SessionState.SESSION_ENDED || state === cast.framework.SessionState.SESSION_START_FAILED) {
                 castPlayingUrl = '';
                 paintOutputButtons();
-                $('#cast-discovery').val('Chromecast disconnected');
+                $('#cast-discovery').val('Disconnected');
             }
         });
     };
@@ -398,7 +462,7 @@ function initCast() {
         cast.framework.CastContext.getInstance().requestSession().then(function() {
             const session = cast.framework.CastContext.getInstance().getCurrentSession();
             const dev = session && session.getCastDevice ? session.getCastDevice() : null;
-            $('#cast-discovery').val(dev && dev.friendlyName ? dev.friendlyName : 'Chromecast connected');
+            $('#cast-discovery').val(dev && dev.friendlyName ? dev.friendlyName : 'Connected');
         }).catch(function() {
             $('#cast-discovery').val('No Chromecast selected');
         });
@@ -407,7 +471,7 @@ function initCast() {
 
 function startCast(url, name) {
     if (!castReady || !window.cast || !cast.framework) {
-        showAlert('Chromecast needs Chrome, and this page on HTTPS or localhost.', 'warning');
+        showAlert('Chromecast needs Chrome on HTTPS or localhost.', 'warning');
         return;
     }
     const ctx = cast.framework.CastContext.getInstance();
@@ -458,7 +522,7 @@ function stopCast() {
     session.endSession(true).then(function() {
         castPlayingUrl = '';
         paintOutputButtons();
-        $('#cast-discovery').val('Chromecast disconnected');
+        $('#cast-discovery').val('Disconnected');
         showAlert('Cast stopped.', 'success');
     }).catch(function() {
         castPlayingUrl = '';
