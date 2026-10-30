@@ -23,7 +23,7 @@ Now you can cast TV statoins which the ChromeCast cannot decode to R-PI.
 You can select AUDIO from the App settings to be over HDMI or over speakers.
 
 -- --
-![Help text](docs/fastiptv.png)
+![2000](docs/fastiptv.png)
 
 
 # Bonus web_server
