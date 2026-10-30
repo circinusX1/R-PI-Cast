@@ -6,7 +6,8 @@ APK application can play TV locally (Android phone), to Google Chrome cast, or c
 
 -- -- 
 ### Used by APK in the APK folder for alternative cast option beside ChromeCast
-####### [this repo is private, ](https://github.com/circinusX1/fast-iptv) utill I drink some cofe from you. If you want access when buyng me a coffee add a message to add you as viewer to the repo, otherwise use the APK prebuild
+
+[this repo is private, ](https://github.com/circinusX1/fast-iptv) utill I drink some cofe from you. If you want access when buyng me a coffee add a message to add you as viewer to the repo, otherwise use the APK prebuild
 
 runs this service.
 
