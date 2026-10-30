@@ -1,7 +1,9 @@
 # Play TV local, on Crome cast and on R-PI
 [Buy me a coffee](https://www.paypal.com/ncp/payment/UY6RJK9AQ6HVC)
 
-## used by https://github.com/circinusX1/fast-iptv  alternative cast option beside ChromeCast
+## Used by APK in the APK folder for alternative cast option beside ChromeCast
+#### https://github.com/circinusX1/fast-iptv/blob/main/readme.MD  
+###### this repo is private, utill I drink some cofe from you. If you want access when buyng me a coffee add a message to add you as viewer to the repo, otherwise use the APK prebuild
 
 ## transforms the R-PI to a 'chrome cast'. Above application can play TV locally, cast to Chrome cast or cast to a R-PI which runs this service.
 
