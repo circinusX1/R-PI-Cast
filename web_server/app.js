@@ -1,0 +1,492 @@
+/**
+ * IPTV Stream Browser - Main Client Script
+ */
+
+let allChannels = [];
+let currentPlayingUrl = '';
+let hdmiPlayingUrl = '';
+let castPlayingUrl = '';
+let hlsInstance = null;
+let castReady = false;
+
+$(document).ready(function() {
+    // Enable tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Handle splitter resizing
+    initResizer();
+
+    // Setup Event Listeners
+    setupEvents();
+
+    // Initial load: check status and auto-load the first selected playlist from the select list box
+    pollStatus();
+    setInterval(pollStatus, 5000);
+
+    const initialFile = $('#playlist-list').val();
+    if (initialFile) {
+        loadChannels(initialFile);
+    }
+
+    initCast();
+});
+
+function initResizer() {
+    const resizer = document.getElementById('resizer');
+    const paneTop = document.getElementById('pane-top');
+    const appContainer = document.querySelector('.app-container');
+    let isDragging = false;
+
+    resizer.addEventListener('mousedown', function(e) {
+        isDragging = true;
+        resizer.classList.add('dragging');
+        e.preventDefault();
+    });
+
+    $(document).on('mousemove', function(e) {
+        if (!isDragging) return;
+        const containerH = appContainer.clientHeight;
+        const topH = e.clientY;
+        const percentage = (topH / containerH) * 100;
+        if (percentage > 15 && percentage < 85) {
+            paneTop.style.flex = `1 1 ${percentage}%`;
+        }
+    });
+
+    $(document).on('mouseup', function() {
+        if (isDragging) {
+            isDragging = false;
+            resizer.classList.remove('dragging');
+        }
+    });
+}
+
+function setupEvents() {
+    // Playlist Selection Box Change Event
+    $(document).on('change', '#playlist-list', function() {
+        const file = $(this).val();
+        if (file) {
+            loadChannels(file);
+        }
+    });
+
+    // Channel Filter Input
+    $('#channel-filter').on('input', function() {
+        const query = $(this).val().toLowerCase();
+        renderChannels(allChannels, query);
+    });
+
+    // Stop Button
+    $('#btn-stop').on('click', function() {
+        $.post('', { action: 'stop' }, function(res) {
+            if (res.ok) {
+                hdmiPlayingUrl = '';
+                paintOutputButtons();
+                showAlert('Playback stopped.', 'success');
+                stopPlayer();
+                pollStatus();
+            } else {
+                showAlert(res.error || 'Failed to stop', 'danger');
+            }
+        }).fail(function() {
+            showAlert('Network error stopping stream', 'danger');
+        });
+    });
+
+    // Save Edit URL Button
+    $('#btn-save-edit').on('click', function() {
+        const text = $('#play-edit').val();
+        $.post('', { action: 'save', text: text }, function(res) {
+            if (res.ok) {
+                showAlert('Saved to play.txt successfully!', 'success');
+                pollStatus();
+            } else {
+                showAlert(res.error || 'Failed to save', 'danger');
+            }
+        }).fail(function() {
+            showAlert('Network error saving text', 'danger');
+        });
+    });
+
+    // SND Toggle Change
+    $('#chk-snd').on('change', function() {
+        const on = $(this).is(':checked') ? '1' : '0';$.post('', { action: 'snd', on: on }, function(res) {
+            if (!res.ok) {
+                showAlert('Failed to update SND toggle', 'danger');
+            }
+        });
+    });
+
+    // Play Stream via Table Action Buttons (delegated)
+    $(document).on('click', '.btn-play', function() {
+        const url = $(this).data('url');
+        const name = $(this).data('name');
+        showSystemCommand(url);
+        playStream(url, name);
+    });
+
+    // HDMI toggle: blue = off, green = this stream is on the Pi HDMI via mpv.
+    // Audio follows the SND switch (play/snd.txt).
+    $(document).on('click', '.btn-hdmi', function() {
+        const btn = $(this);
+        const url = btn.data('url');
+        const name = btn.data('name') || 'stream';
+        const sndOn = $('#chk-snd').is(':checked');
+
+        if (hdmiPlayingUrl === url) {
+            $.post('', { action: 'stop' }, function(res) {
+                if (res.ok) {
+                    hdmiPlayingUrl = '';
+                    paintOutputButtons();
+                    showAlert('HDMI mpv stopped.', 'success');
+                    pollStatus();
+                } else {
+                    showAlert(res.error || 'Failed to stop HDMI', 'danger');
+                }
+            }).fail(function() {
+                showAlert('Network error stopping HDMI', 'danger');
+            });
+            return;
+        }
+
+        $.post('', { action: 'hdmi', url: url }, function(res) {
+            if (res.ok) {
+                hdmiPlayingUrl = url;
+                paintOutputButtons();
+                showSystemCommand(url);
+                const audio = sndOn ? 'headphones (SND on)' : 'HDMI audio (SND off)';
+                showAlert('HDMI mpv: ' + name + ' — ' + audio, 'success');
+                pollStatus();
+            } else {
+                showAlert(res.error || 'Failed to send to HDMI', 'danger');
+            }
+        }).fail(function() {
+            showAlert('Network error sending to HDMI', 'danger');
+        });
+    });
+
+    // CAST toggle: blue = not casting this stream, green = this stream is on Chromecast.
+    $(document).on('click', '.btn-cast', function() {
+        const url = $(this).data('url');
+        const name = $(this).data('name') || 'stream';
+        if (castPlayingUrl === url) {
+            stopCast();
+            return;
+        }
+        startCast(url, name);
+    });
+}
+
+function loadChannels(fileName) {
+    $('#channels-body').html('<tr><td colspan="3" class="text-secondary py-4 text-center"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Loading channels...</td></tr>');
+    $('#channel-filter').prop('disabled', true);
+
+    $.get('', { action: 'parse', file: fileName }, function(res) {
+        if (res.ok) {
+            allChannels = res.channels || [];
+            renderChannels(allChannels, '');
+            $('#channel-filter').prop('disabled', false).val('');
+            showAlert(`Loaded ${allChannels.length} channels from ${res.file}.`, 'success');
+        } else {
+            $('#channels-body').html(`<tr><td colspan="3" class="text-danger py-4 text-center">${res.error || 'Failed to parse file'}</td></tr>`);
+            showAlert(res.error || 'Failed to parse file', 'danger');
+        }
+    }).fail(function() {
+        $('#channels-body').html('<tr><td colspan="3" class="text-danger py-4 text-center">Network error loading channels.</td></tr>');
+        showAlert('Network error loading channels.', 'danger');
+    });
+}
+
+function renderChannels(channels, filterQuery) {
+    const tbody = $('#channels-body');
+    tbody.empty();
+
+    const filtered = channels.filter(ch => {
+        if (!filterQuery) return true;
+        const name = (ch.name || '').toLowerCase();
+        const genre = (ch.genre || '').toLowerCase();
+        const url = (ch.url || '').toLowerCase();
+        return name.includes(filterQuery) || genre.includes(filterQuery) || url.includes(filterQuery);
+    });
+
+    if (filtered.length === 0) {
+        tbody.html('<tr><td colspan="3" class="text-secondary py-4 text-center">No channels found matching filter.</td></tr>');
+        return;
+    }
+
+    const htmlRows = filtered.map(ch => {
+        const name = escapeHtml(ch.name || 'Unnamed Channel');
+        const genre = escapeHtml(ch.genre || ch.group || 'General');
+        const url = escapeHtml(ch.url || '');
+        const isPlaying = url === currentPlayingUrl;
+
+        return `
+            <tr class="${isPlaying ? 'playing' : ''}">
+                <td>
+                    <div class="fw-semibold text-truncate" style="max-width: 250px;" title="${name}">${name}</div>
+                </td>
+                <td>
+                    <span class="badge genre-badge">${genre}</span>
+                </td>
+                <td>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="stream-url small font-monospace" title="${url}">${url}</span>
+                        <button type="button" class="btn btn-sm btn-primary btn-play" data-url="${url}" data-name="${name}">
+                            <i class="bi bi-play-fill"></i> Play
+                        </button>
+                        <button type="button" class="btn btn-sm ${hdmiPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-hdmi" data-url="${url}" data-name="${name}" title="Toggle HDMI mpv. Audio follows SND.">
+                            HDMI
+                        </button>
+                        <button type="button" class="btn btn-sm ${castPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-cast" data-url="${url}" data-name="${name}" title="Toggle Chromecast on this network">
+                            CAST
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.html(htmlRows.join(''));
+}
+
+function playStream(url, name) {
+    currentPlayingUrl = url;
+    showSystemCommand(url);
+    $('#player-title').html(`<i class="bi bi-tv me-1"></i> ${name}`);
+    $('#player-status').text('Connecting...').removeClass('bg-secondary bg-success bg-danger').addClass('bg-warning text-dark');
+
+    // Post to play.txt backend
+    $.post('', { action: 'play', url: url }, function(res) {
+        if (res.ok) {
+            pollStatus();
+        }
+    });
+
+    // Start local embedded video playback
+    const video = document.getElementById('video-player');
+
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+
+    if (url.includes('.m3u8')) {
+        if (Hls.isSupported()) {
+            hlsInstance = new Hls();
+            hlsInstance.loadSource(url);
+            hlsInstance.attachMedia(video);
+            hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+                video.play().catch(() => {});
+                $('#player-status').text('Playing').removeClass('bg-warning bg-secondary bg-danger').addClass('bg-success');
+            });
+            hlsInstance.on(Hls.Events.ERROR, function(event, data) {
+                if (data.fatal) {
+                    $('#player-status').text('Stream Error').removeClass('bg-warning bg-success').addClass('bg-danger');
+                }
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = url;
+            video.addEventListener('loadedmetadata', function() {
+                video.play().catch(() => {});
+                $('#player-status').text('Playing').removeClass('bg-warning bg-secondary bg-danger').addClass('bg-success');
+            });
+        }
+    } else {
+        video.src = url;
+        video.play().catch(() => {});
+        $('#player-status').text('Playing').removeClass('bg-warning bg-secondary bg-danger').addClass('bg-success');
+    }
+
+    // Refresh table to update highlight state
+    renderChannels(allChannels, $('#channel-filter').val().toLowerCase());
+}
+
+function showSystemCommand(url) {
+    $('#player-cmd').val(systemCommand(url));
+}
+
+function shellQuote(value) {
+    return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
+
+// Same argv dropmvp.sh execs after writing play/play.txt.
+// SND on -> headphones, SND off -> HDMI audio. Picture is always HDMI.
+function systemCommand(url) {
+    const sndOn = $('#chk-snd').is(':checked');
+    const adev = sndOn ? 'alsa/plughw:Headphones,0' : 'alsa/plughw:vc4hdmi0,0';
+    const args = [
+        'mpv',
+        '--ao=alsa',
+        '--audio-device=' + adev,
+        '--hwdec=v4l2m2m-copy',
+        '--vo=gpu',
+        '--gpu-context=drm',
+        '--fs',
+        '--cache=yes'
+    ];
+    if (/youtube\.com|youtu\.be|googlevideo\.com/i.test(url)) {
+        args.push("--ytdl-format='bv*[height<=720][fps<=30][vcodec^=avc1]+ba/18'");
+    } else {
+        args.push('--hls-bitrate=3100000');
+    }
+    args.push('--', shellQuote(url));
+    return args.join(' ');
+}
+
+function stopPlayer() {
+    currentPlayingUrl = '';
+    const video = document.getElementById('video-player');
+    video.pause();
+    video.src = '';
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+    $('#player-title').html('<i class="bi bi-tv me-1"></i> Local Embedded Player');
+    $('#player-status').text('Idle').removeClass('bg-success bg-warning bg-danger').addClass('bg-secondary');
+    $('#player-cmd').val('');
+    renderChannels(allChannels, $('#channel-filter').val().toLowerCase());
+}
+
+function paintOutputButtons() {
+    $('.btn-hdmi').each(function() {
+        const on = $(this).data('url') === hdmiPlayingUrl && hdmiPlayingUrl !== '';
+        $(this).toggleClass('btn-success', on).toggleClass('btn-primary', !on);
+    });
+    $('.btn-cast').each(function() {
+        const on = $(this).data('url') === castPlayingUrl && castPlayingUrl !== '';
+        $(this).toggleClass('btn-success', on).toggleClass('btn-primary', !on);
+    });
+}
+
+function castMime(url) {
+    if (/\.m3u8(\?|$)/i.test(url)) return 'application/x-mpegurl';
+    if (/\.mpd(\?|$)/i.test(url)) return 'application/dash+xml';
+    return 'video/mp4';
+}
+
+function initCast() {
+    window.__onGCastApiAvailable = function(isAvailable) {
+        if (!isAvailable || !window.cast || !cast.framework) {
+            $('#cast-discovery').val('Chromecast sender not available in this browser');
+            return;
+        }
+        const ctx = cast.framework.CastContext.getInstance();
+        ctx.setOptions({
+            receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+            autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+        });
+        castReady = true;
+        $('#cast-discovery').val('Ready — click CAST to pick a Chromecast');
+        ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, function(ev) {
+            const state = ev.sessionState;
+            if (state === cast.framework.SessionState.SESSION_ENDED || state === cast.framework.SessionState.SESSION_START_FAILED) {
+                castPlayingUrl = '';
+                paintOutputButtons();
+                $('#cast-discovery').val('Chromecast disconnected');
+            }
+        });
+    };
+    $('#btn-find-cast').on('click', function() {
+        if (!castReady) {
+            showAlert('Chromecast sender is not ready. Use Chrome on HTTPS or localhost.', 'warning');
+            return;
+        }
+        cast.framework.CastContext.getInstance().requestSession().then(function() {
+            const session = cast.framework.CastContext.getInstance().getCurrentSession();
+            const dev = session && session.getCastDevice ? session.getCastDevice() : null;
+            $('#cast-discovery').val(dev && dev.friendlyName ? dev.friendlyName : 'Chromecast connected');
+        }).catch(function() {
+            $('#cast-discovery').val('No Chromecast selected');
+        });
+    });
+}
+
+function startCast(url, name) {
+    if (!castReady || !window.cast || !cast.framework) {
+        showAlert('Chromecast needs Chrome, and this page on HTTPS or localhost.', 'warning');
+        return;
+    }
+    const ctx = cast.framework.CastContext.getInstance();
+    const load = function(session) {
+        const mediaInfo = new chrome.cast.media.MediaInfo(url, castMime(url));
+        mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
+        mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata();
+        mediaInfo.metadata.title = name;
+        return session.loadMedia(new chrome.cast.media.LoadRequest(mediaInfo));
+    };
+    const after = function() {
+        const session = ctx.getCurrentSession();
+        if (!session) {
+            showAlert('No Chromecast session.', 'danger');
+            return;
+        }
+        load(session).then(function() {
+            castPlayingUrl = url;
+            paintOutputButtons();
+            const dev = session.getCastDevice ? session.getCastDevice() : null;
+            $('#cast-discovery').val(dev && dev.friendlyName ? ('Casting to ' + dev.friendlyName) : 'Casting');
+            showAlert('Casting ' + name, 'success');
+        }).catch(function(err) {
+            showAlert('Cast failed: ' + (err && err.description ? err.description : 'load error'), 'danger');
+        });
+    };
+    if (ctx.getCurrentSession()) {
+        after();
+        return;
+    }
+    ctx.requestSession().then(after).catch(function() {
+        showAlert('Chromecast picker cancelled.', 'warning');
+    });
+}
+
+function stopCast() {
+    if (!castReady || !window.cast || !cast.framework) {
+        castPlayingUrl = '';
+        paintOutputButtons();
+        return;
+    }
+    const session = cast.framework.CastContext.getInstance().getCurrentSession();
+    if (!session) {
+        castPlayingUrl = '';
+        paintOutputButtons();
+        return;
+    }
+    session.endSession(true).then(function() {
+        castPlayingUrl = '';
+        paintOutputButtons();
+        $('#cast-discovery').val('Chromecast disconnected');
+        showAlert('Cast stopped.', 'success');
+    }).catch(function() {
+        castPlayingUrl = '';
+        paintOutputButtons();
+    });
+}
+
+function pollStatus() {
+    $.get('', { action: 'status' }, function(res) {
+        if (res.ok) {
+            if (res.play && res.play !== 'STOP') {
+                $('#status-line').html(`Last in <code>play/play.txt</code>: <code>${escapeHtml(res.play)}</code>`);
+            } else {
+                $('#status-line').html('Ready. Select a playlist file from the list box.');
+            }
+        }
+    });
+}
+
+function showAlert(message, type = 'info') {
+    const alertBox = $('#alert-box');
+    alertBox.removeClass('d-none alert-success alert-danger alert-info alert-warning').addClass(`alert-${type}`).text(message);
+    setTimeout(() => {
+        alertBox.addClass('d-none');
+    }, 4000);
+}
+
+function escapeHtml(str) {
+    return $('<div>').text(str).html();
+}
+
