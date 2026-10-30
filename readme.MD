@@ -26,18 +26,19 @@ You can select AUDIO from the App settings to be over HDMI or over speakers.
 ![Help text](https://github.com/circinusX1/fast-iptv-apk-code/blob/main/docs/fastiptv.png?raw=true)
 
 
-# web_server
+# Bonus web_server
 
-Is the APK version of the web quite simplified. 
+This is the web versin of the APK simplified.
+
 You can run it locally if you have apache2 or lighttpd with PHP
-emabled, otherwise the simpler is:
+emabled, otherwise the simplerway is with just php:
 
 ```
-php -S localhost:8000 # int he folder where index.php is located.
+php -S localhost:8000 # in the folder where index.php is located.
 ```
+
 If you deploy it on a R-PI or an a board with HDMI and a good video card,
-The you can access it by IP. the you select HDMI play and from top buttons the SOUND
-pipe.
+then you can access it by IP. Audio HDMI/Speakers play frmo the left top buttons.
 
 ![1000](docs/rpi-cast.png)
 
