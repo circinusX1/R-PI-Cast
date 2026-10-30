@@ -194,6 +194,21 @@ function setupEvents() {
         }
         startCast(url, name);
     });
+    
+    $(document).on('click', '.btn-play-popup', function() {
+        const url = $(this).data('url');
+        const name = $(this).data('name') || 'Stream Popup';
+        const popupUrl = 'play.php?url=' + encodeURIComponent(url);
+        
+        // Open a new popup window with specific dimensions
+        const width = 800;
+        const height = 600;
+        const left = (window.screen.width - width) / 2;
+        const top = (window.screen.height - height) / 2;
+        
+        window.open(popupUrl, '_blank', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`);
+    });
+    
 }
 
 function populatePlaylistSidebar(options, autoLoadFirst = false) {
@@ -261,22 +276,22 @@ function renderChannels(channels, filterQuery) {
         const isPlaying = url === currentPlayingUrl;
         const playlistBadge = ch.playlist_display ? `<span class="badge bg-secondary me-1" title="Country">${escapeHtml(ch.playlist_display)}</span>` : '';
 
-        // Check if the stream URL extension is html or ends with html
+        // Check if the stream URL extension is htm or html
         const isHtmlStream = /\.html?($|\?)/i.test(url);
 
         let streamColumnContent = '';
         if (isHtmlStream) {
-            // Disable play button or omit it, and transform stream-url into an anchor link with target="_blank"
+            // HTML stream: HDMI and CAST greyed out (disabled), but Play is active and opens popup
             streamColumnContent = `
                 <div class="d-flex align-items-center gap-2">
                     <a href="${url}" target="_blank" rel="noopener noreferrer" class="stream-url small font-monospace text-decoration-underline" title="${url}">${url}</a>
-                    <button type="button" class="btn btn-sm btn-secondary btn-play" disabled title="HTML stream cannot be played locally">
+                    <button type="button" class="btn btn-sm btn-primary btn-play-popup" data-url="${url}" data-name="${name}" title="Open stream in popup">
                         <i class="bi bi-play-fill"></i> Play
                     </button>
-                    <button type="button" class="btn btn-sm btn-secondary btn-hdmi" disabled title="Not available for HTML">
+                    <button type="button" class="btn btn-sm btn-secondary btn-hdmi" disabled title="Not available for HTML streams">
                         HDMI
                     </button>
-                    <button type="button" class="btn btn-sm btn-secondary btn-cast" disabled title="Not available for HTML">
+                    <button type="button" class="btn btn-sm btn-secondary btn-cast" disabled title="Not available for HTML streams">
                         CAST
                     </button>
                 </div>

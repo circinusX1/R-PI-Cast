@@ -644,7 +644,7 @@ function handle_action(
 function playlist_choices(string $streamsDir): array
 {
     $files = list_stream_files($streamsDir);
-    array_unshift($files, 'cool_tv');
+    $files[] = 'cool_tv';
     return $files;
 }
 
