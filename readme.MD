@@ -2,7 +2,7 @@
 [Buy me a coffee](https://www.paypal.com/ncp/payment/UY6RJK9AQ6HVC)
 -- --
 Ttransforms the R-PI to a 'chrome cast'. 
-Above application can play TV locally, to Google Chrome cast, or cast to a R-PI (after you install this app on R-PI) 
+APK application can play TV locally (Android phone), to Google Chrome cast, or cast to a R-PI (after you install this app on R-PI) 
 
 -- -- 
 ### Used by APK in the APK folder for alternative cast option beside ChromeCast
