@@ -50,6 +50,10 @@ Then you play it by pressing HDMI button over the HDMI.
 
 ![1000](docs/rpi-cast.png)
 
+-- -- 
+
+Try couple of them, they might not be online or outdated.
+
 [WebDemo](https://ghitara.com/fast-tv)
 
 
