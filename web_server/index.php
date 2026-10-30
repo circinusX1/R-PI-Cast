@@ -524,6 +524,7 @@ function handle_action(
             return;
         case 'parse':
             $file = basename((string) ($_GET['file'] ?? $_POST['file'] ?? ''));
+            
             if ($file === 'cool_tv') {
                 $csv = cool_tv_csv_path($dataDir);
                 if ($csv === null) {

@@ -9,6 +9,8 @@ let castPlayingUrl = '';
 let hlsInstance = null;
 let castReady = false;
 let fullPlaylistOptions = [];
+let disableHdmi = false;
+let disableCast = false;
 
 $(document).ready(function() {
     // Enable tooltips
@@ -76,8 +78,13 @@ function initResizer() {
 }
 
 function setupEvents() {
-    // Playlist Selection Box Change Event
-    $(document).on('change', '#playlist-list', function() {
+    // Playlist Selection Box Change Event (Single-click / selection change loads channels instantly)
+    $(document).on('click change', '#playlist-list', function(e) {
+        // Prevent single click or selection change from loading channels
+        e.preventDefault();
+    });
+
+    $(document).on('dblclick', '#playlist-list', function() {
         const file = $(this).val();
         if (file) {
             loadChannels(file);
@@ -87,7 +94,7 @@ function setupEvents() {
     // Reset Countries List Button
     $('#btn-reset-countries').on('click', function() {
         $('#search_cntry').val('');
-        populatePlaylistSidebar(fullPlaylistOptions, true);
+        populatePlaylistSidebar(fullPlaylistOptions, false);
         showAlert('Country list reset.', 'info');
     });
 
@@ -145,8 +152,23 @@ function setupEvents() {
         playStream(url, name);
     });
 
+    // Open HTML stream URL in a new popup window via play.php
+    $(document).on('click', '.btn-play-popup', function() {
+        const url = $(this).data('url');
+        const name = $(this).data('name') || 'Stream Popup';
+        const popupUrl = 'play.php?url=' + encodeURIComponent(url);
+        
+        const width = 800;
+        const height = 600;
+        const left = (window.screen.width - width) / 2;
+        const top = (window.screen.height - height) / 2;
+        
+        window.open(popupUrl, '_blank', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`);
+    });
+
     // HDMI toggle
     $(document).on('click', '.btn-hdmi', function() {
+        if (disableHdmi) return;
         const btn = $(this);
         const url = btn.data('url');
         const name = btn.data('name') || 'stream';
@@ -186,6 +208,7 @@ function setupEvents() {
 
     // CAST toggle
     $(document).on('click', '.btn-cast', function() {
+        if (disableCast) return;
         const url = $(this).data('url');
         const name = $(this).data('name') || 'stream';
         if (castPlayingUrl === url) {
@@ -194,21 +217,6 @@ function setupEvents() {
         }
         startCast(url, name);
     });
-    
-    $(document).on('click', '.btn-play-popup', function() {
-        const url = $(this).data('url');
-        const name = $(this).data('name') || 'Stream Popup';
-        const popupUrl = 'play.php?url=' + encodeURIComponent(url);
-        
-        // Open a new popup window with specific dimensions
-        const width = 800;
-        const height = 600;
-        const left = (window.screen.width - width) / 2;
-        const top = (window.screen.height - height) / 2;
-        
-        window.open(popupUrl, '_blank', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`);
-    });
-    
 }
 
 function populatePlaylistSidebar(options, autoLoadFirst = false) {
@@ -240,6 +248,9 @@ function loadChannels(fileName) {
     $.get('', { action: 'parse', file: fileName }, function(res) {
         if (res.ok) {
             allChannels = res.channels || [];
+            disableHdmi = !!res.has_hdmi;
+            disableCast = !!res.has_cast;
+
             renderChannels(allChannels, '');
             showAlert(`Loaded ${allChannels.length} channels.`, 'success');
         } else {
@@ -276,38 +287,44 @@ function renderChannels(channels, filterQuery) {
         const isPlaying = url === currentPlayingUrl;
         const playlistBadge = ch.playlist_display ? `<span class="badge bg-secondary me-1" title="Country">${escapeHtml(ch.playlist_display)}</span>` : '';
 
-        // Check if the stream URL extension is htm or html
         const isHtmlStream = /\.html?($|\?)/i.test(url);
 
         let streamColumnContent = '';
         if (isHtmlStream) {
-            // HTML stream: HDMI and CAST greyed out (disabled), but Play is active and opens popup
+            const hdmiAttr = disableHdmi ? 'disabled' : 'disabled';
+            const castAttr = disableCast ? 'disabled' : 'disabled';
+
             streamColumnContent = `
                 <div class="d-flex align-items-center gap-2">
                     <a href="${url}" target="_blank" rel="noopener noreferrer" class="stream-url small font-monospace text-decoration-underline" title="${url}">${url}</a>
                     <button type="button" class="btn btn-sm btn-primary btn-play-popup" data-url="${url}" data-name="${name}" title="Open stream in popup">
                         <i class="bi bi-play-fill"></i> Play
                     </button>
-                    <button type="button" class="btn btn-sm btn-secondary btn-hdmi" disabled title="Not available for HTML streams">
+                    <button type="button" class="btn btn-sm btn-secondary btn-hdmi" ${hdmiAttr} title="Not available for HTML streams">
                         HDMI
                     </button>
-                    <button type="button" class="btn btn-sm btn-secondary btn-cast" disabled title="Not available for HTML streams">
+                    <button type="button" class="btn btn-sm btn-secondary btn-cast" ${castAttr} title="Not available for HTML streams">
                         CAST
                     </button>
                 </div>
             `;
         } else {
-            // Standard media stream rendering
+            const hdmiBtnClass = disableHdmi ? 'btn-secondary' : (hdmiPlayingUrl === ch.url ? 'btn-success' : 'btn-primary');
+            const hdmiAttr = disableHdmi ? 'disabled' : '';
+            
+            const castBtnClass = disableCast ? 'btn-secondary' : (castPlayingUrl === ch.url ? 'btn-success' : 'btn-primary');
+            const castAttr = disableCast ? 'disabled' : '';
+
             streamColumnContent = `
                 <div class="d-flex align-items-center gap-2">
                     <span class="stream-url small font-monospace" title="${url}">${url}</span>
                     <button type="button" class="btn btn-sm btn-primary btn-play" data-url="${url}" data-name="${name}">
                         <i class="bi bi-play-fill"></i> Play
                     </button>
-                    <button type="button" class="btn btn-sm ${hdmiPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-hdmi" data-url="${url}" data-name="${name}" title="Toggle HDMI mpv.">
+                    <button type="button" class="btn btn-sm ${hdmiBtnClass} btn-hdmi" data-url="${url}" data-name="${name}" ${hdmiAttr} title="${disableHdmi ? 'Disabled by _HDMI file' : 'Toggle HDMI mpv'}">
                         HDMI
                     </button>
-                    <button type="button" class="btn btn-sm ${castPlayingUrl === ch.url ? 'btn-success' : 'btn-primary'} btn-cast" data-url="${url}" data-name="${name}" title="Toggle Chromecast">
+                    <button type="button" class="btn btn-sm ${castBtnClass} btn-cast" data-url="${url}" data-name="${name}" ${castAttr} title="${disableCast ? 'Disabled by _CAST file' : 'Toggle Chromecast'}">
                         CAST
                     </button>
                 </div>
@@ -334,7 +351,6 @@ function renderChannels(channels, filterQuery) {
 
     tbody.html(htmlRows.join(''));
 }
-
 
 function playStream(url, name) {
     currentPlayingUrl = url;
@@ -485,6 +501,7 @@ function initCast() {
 }
 
 function startCast(url, name) {
+    if (disableCast) return;
     if (!castReady || !window.cast || !cast.framework) {
         showAlert('Chromecast needs Chrome on HTTPS or localhost.', 'warning');
         return;
