@@ -5,3 +5,7 @@
 
 ## transforms the R-PI to a 'chrome cast'. Above application can play TV locally, cast to Chrome cast or cast to a R-PI which runs this service.
 
+```
+./install.sh
+
+```
